@@ -413,7 +413,7 @@ rlc_am_get_pdus (
   // The transmitting side of an AM RLC entity shall prioritize retransmission of RLC data PDUs over transmission of new
   // AMD PDUs.
 
-
+  printf("rlc_am.c:417   rlc_pP->protocol_state = %x", rlc_pP->protocol_state);
   switch (rlc_pP->protocol_state) {
 
   case RLC_NULL_STATE:
@@ -666,6 +666,7 @@ rlc_am_mac_data_request (
   const eNB_flag_t        enb_flagP
 )
 {
+ // printf("rlc_am.c:663  rlc_am_mac_data_request()\n");
   struct mac_data_req data_req;
   rlc_am_entity_t *l_rlc_p = (rlc_am_entity_t *) rlc_pP;
   unsigned int nb_bytes_requested_by_mac = ((rlc_am_entity_t *) rlc_pP)->nb_bytes_requested_by_mac;

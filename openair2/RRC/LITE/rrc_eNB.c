@@ -4022,6 +4022,7 @@ rrc_eNB_decode_ccch(
 )
 //-----------------------------------------------------------------------------
 {
+  printf("rrc_eNB.c   rrc_eNB_decode_ccch()\n");
   module_id_t                                   Idx;
   asn_dec_rval_t                      dec_rval;
   UL_CCCH_Message_t                  *ul_ccch_msg = NULL;

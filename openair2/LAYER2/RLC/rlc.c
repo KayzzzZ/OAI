@@ -322,6 +322,7 @@ rlc_op_status_t rlc_data_req     (const protocol_ctxt_t* const ctxt_pP,
                                   mem_block_t *sdu_pP)
 {
   //-----------------------------------------------------------------------------
+  //printf("rlc.c:315  rlc_data:req()\n");
   mem_block_t           *new_sdu_p    = NULL;
   rlc_mode_t             rlc_mode     = RLC_MODE_NONE;
   rlc_union_t           *rlc_union_p = NULL;

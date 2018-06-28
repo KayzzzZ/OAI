@@ -170,6 +170,7 @@ rlc_tm_mac_data_request (
   const protocol_ctxt_t* const  ctxt_pP,
   void * const rlc_pP)
 {
+  printf("rlc_tm.c:169  rlc_tm_mac_data_request()\n");
   rlc_tm_entity_t*    rlc_p = (rlc_tm_entity_t*) rlc_pP;
   struct mac_data_req data_req;
 

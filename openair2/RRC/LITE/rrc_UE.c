@@ -2642,6 +2642,7 @@ int decode_BCCH_DLSCH_Message(
   const uint8_t                rsrq,
   const uint8_t                rsrp )
 {
+  printf("rrc_UE.c:2637  decode_BCCH_DLSCH_Message\n");
   BCCH_DL_SCH_Message_t *bcch_message = NULL;
   SystemInformationBlockType1_t* sib1 = UE_rrc_inst[ctxt_pP->module_id].sib1[eNB_index];
   int i;

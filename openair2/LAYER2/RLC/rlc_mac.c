@@ -129,6 +129,7 @@ tbs_size_t mac_rlc_data_req(
   char             *buffer_pP)
 {
   //-----------------------------------------------------------------------------
+ // printf("rlc_mac.c:120  called 'mac_rlc_data_req()\n");
   struct mac_data_req    data_request;
   rlc_mode_t             rlc_mode        = RLC_MODE_NONE;
   rlc_mbms_id_t         *mbms_id_p       = NULL;
@@ -183,7 +184,7 @@ tbs_size_t mac_rlc_data_req(
     rlc_mode = RLC_MODE_NONE;
     AssertFatal (0 , "RLC not configured lcid %u RNTI %x!\n", channel_idP, rntiP);
   }
-
+  //printf("rlc_mac.c:187   rlc_mode = %d\n", rlc_mode);
   switch (rlc_mode) {
   case RLC_MODE_NONE:
     ret_tb_size =0;

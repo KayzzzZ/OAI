@@ -421,6 +421,7 @@ schedule_ue_spec(
 //------------------------------------------------------------------------------
 {
 
+  //printf("eNB_scheduler_dlsch.c:415  schedule_ue_spec\n");
   uint8_t               CC_id;
   int                   UE_id;
   int                   N_RBG[MAX_NUM_CCs];

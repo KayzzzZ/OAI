@@ -524,6 +524,7 @@ rlc_um_set_nb_bytes_requested_by_mac (
 struct mac_data_req
 rlc_um_mac_data_request (const protocol_ctxt_t* const ctxt_pP, void *rlc_pP,const eNB_flag_t  enb_flagP)
 {
+  //printf("rlc_um.c:525  rlc_um_mac_data_request()\n");
   struct mac_data_req data_req;
   int16_t               tb_size_in_bytes;
   mem_block_t        *tb_p;

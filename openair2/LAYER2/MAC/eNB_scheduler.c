@@ -376,7 +376,7 @@ void eNB_dlsch_ulsch_scheduler(module_id_t module_idP,uint8_t cooperation_flag, 
     i=next_i;
   }
   */
-
+  //printf("eNB_scheduler.c:380  subframeP = %d\n", subframeP);
   switch (subframeP) {
   case 0:
 

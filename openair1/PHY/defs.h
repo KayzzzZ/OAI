@@ -981,21 +981,21 @@ struct rx_tx_thread_data {
 };
 
 void exit_fun(const char* s);
-
+//wait_on_condition输出参数为互斥锁，条件变量，int参数，以及线程名称
 static inline int wait_on_condition(pthread_mutex_t *mutex,pthread_cond_t *cond,int *instance_cnt,char *name) {
-
+  //先锁住互斥锁
   if (pthread_mutex_lock(mutex) != 0) {
     LOG_E( PHY, "[SCHED][eNB] error locking mutex for %s\n",name);
     exit_fun("nothing to add");
     return(-1);
   }
-
+  //有资源，唤醒
   while (*instance_cnt < 0) {
     // most of the time the thread is waiting here
     // proc->instance_cnt_rxtx is -1
     pthread_cond_wait(cond,mutex); // this unlocks mutex_rxtx while waiting and then locks it again
   }
-
+  //释放互斥锁
   if (pthread_mutex_unlock(mutex) != 0) {
     LOG_E(PHY,"[SCHED][eNB] error unlocking mutex for %s\n",name);
     exit_fun("nothing to add");
@@ -1027,15 +1027,15 @@ static inline int wait_on_busy_condition(pthread_mutex_t *mutex,pthread_cond_t *
 }
 
 static inline int release_thread(pthread_mutex_t *mutex,int *instance_cnt,char *name) {
-
+  //锁住
   if (pthread_mutex_lock(mutex) != 0) {
     LOG_E( PHY, "[SCHED][eNB] error locking mutex for %s\n",name);
     exit_fun("nothing to add");
     return(-1);
   }
-
+  //已经处理完了，没有需要处理的资源了
   *instance_cnt=*instance_cnt-1;
-
+  //解锁
   if (pthread_mutex_unlock(mutex) != 0) {
     LOG_E( PHY, "[SCHED][eNB] error unlocking mutex for %s\n",name);
     exit_fun("nothing to add");

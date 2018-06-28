@@ -72,6 +72,7 @@ mac_rrc_data_req(
 )
 //--------------------------------------------------------------------------
 {
+ // printf("L2_interface.c:62  mac_rrc_data_req()\n");
   SRB_INFO *Srb_info;
   uint8_t Sdu_size=0;
 
@@ -215,7 +216,8 @@ mac_rrc_data_req(
 #endif
 
         memcpy(buffer_pP,Srb_info->Tx_buffer.Payload,Srb_info->Tx_buffer.payload_size);
-        Sdu_size = Srb_info->Tx_buffer.payload_size;
+        //printf("\n\nmac_rrc_data_req() buffer:\n%s\n\n", *buffer_pP);
+		Sdu_size = Srb_info->Tx_buffer.payload_size;
         Srb_info->Tx_buffer.payload_size=0;
       }
 
@@ -523,6 +525,7 @@ rrc_data_req(
 )
 //------------------------------------------------------------------------------
 {
+  printf("L2_interface.c:515 rrc_data_req()\n");
   MSC_LOG_TX_MESSAGE(
     ctxt_pP->enb_flag ? MSC_RRC_ENB : MSC_RRC_UE,
     ctxt_pP->enb_flag ? MSC_PDCP_ENB : MSC_PDCP_UE,

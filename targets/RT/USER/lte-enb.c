@@ -172,7 +172,7 @@ extern struct timespec start_fh, start_fh_prev;
 extern int start_fh_sf, start_fh_prev_sf;
 struct timespec end_fh;
 int end_fh_sf;
-
+//thread_top_init的作用：
 static inline void thread_top_init(char *thread_name,
 				   int affinity,
 				   uint64_t runtime,
@@ -221,6 +221,7 @@ static inline void thread_top_init(char *thread_name,
     else
       for (j = 1; j < get_nprocs(); j++)
         CPU_SET(j, &cpuset);
+    //将线程绑定在某个CPU核上
     s = pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
     if (s != 0)
     {
@@ -268,19 +269,43 @@ static inline void thread_top_init(char *thread_name,
                    sparam.sched_priority, cpu_affinity );
 
 #endif //LOW_LATENCY
-
+/*
+mlockall函数
+1. 原型： int mlockall(int flags);
+2. mlockall函数将调用进程的全部虚拟地址空间加锁。防止出现内存交换，将该进程的地址空间交换到外存上。
+3. mlockall将所有映射到进程地址空间的内存上锁。这些页包括： 代码段，数据段，栈段，共享库，共享内存，user space kernel data,memory-mapped file.当函数成功返回的时候，所有的被映射的页都在内存中。
+4. flags可取两个值：MCL_CURRENT,MCL_FUTURE
+MCL_CURRENT: 表示对所有已经映射到进程地址空间的页上锁
+MCL_FUTURE:  表示对所有将来映射到进程地空间的页都上锁。
+5. 返回： 成功返回0，出错返回-1
+6. 此函数有两个重要的应用： real-time algorithms(实时算法) 和 high-security data processing(机密数据的处理)
+real-time algorithms：对时间要非常高。
+high-security data processing: 如果数据被交换到外存上，可能会泄密
+7. 如果进程执行了一个execve类函数，所有的锁都会被删除。
+8. 内存锁不会被子进程继承。
+9. 内存锁不会叠加，即使多次调用mlockall函数，只调用一次munlock就会解锁
+*/
   mlockall(MCL_CURRENT | MCL_FUTURE);
 
 }
-
+//wait_sync的作用：
 static inline void wait_sync(char *thread_name) {
 
   printf( "waiting for sync (%s)\n",thread_name);
+  //sync_mutex是一个全局锁，这个锁在lte-softmodem.c中声明，为pthread_mutex_t sync_mutex
+  //线程会尝试去锁住这个锁，如果锁不住会等待；在调用pthread_cond_wait()前必须由本线程加锁！
   pthread_mutex_lock( &sync_mutex );
-  
+  //sync_var是一个全局变量，在lte-softmodem.c中声明，为int sync_var=-1;
+  //线程会一直尝试pthread_cond_wait
+  //sync_var<0代表资源不可用，于是一直等待
   while (sync_var<0)
+  //sync_cond是一个全局变量，在lte-softmodem.c中声明，为pthread_cond_t sync_cond；
     pthread_cond_wait( &sync_cond, &sync_mutex );
-  
+  /*
+  pthread_cond_wait会先解除之前的pthread_mutex_lock锁定的mtx，然后阻塞在等待队列里休眠，直到再次被唤醒（大多数情况下是等待的条件成立而被唤醒，唤醒后，该进程会先锁定先pthread_mutex_lock(&mtx);，再读取资源用这个流程是比较清楚的
+  block-->unlock-->wait()return-->lock
+  */
+  //临界区数据操作完毕，释放互斥锁
   pthread_mutex_unlock(&sync_mutex);
   
   printf( "got sync (%s)\n", thread_name);
@@ -298,7 +323,7 @@ void do_OFDM_mod_rt(int subframe,PHY_VARS_eNB *phy_vars_eNB)
   //int slot_sizeF = (phy_vars_eNB->frame_parms.ofdm_symbol_size)* ((phy_vars_eNB->frame_parms.Ncp==1) ? 6 : 7);
   int len;
   //int slot_offset_F = (subframe<<1)*slot_sizeF;
-
+  
   slot_offset = subframe*phy_vars_eNB->frame_parms.samples_per_tti;
 
   if ((subframe_select(&phy_vars_eNB->frame_parms,subframe)==SF_DL)||
@@ -306,6 +331,11 @@ void do_OFDM_mod_rt(int subframe,PHY_VARS_eNB *phy_vars_eNB)
     //    LOG_D(HW,"Frame %d: Generating slot %d\n",frame,next_slot);
 
     VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME(VCD_SIGNAL_DUMPER_FUNCTIONS_ENB_OFDM_MODULATION,1);
+
+    // add by wangcheng, check the  frequency domain data
+    //int nsymb = 14;
+    //write_output("txsigF0.m","txsF0", &phy_vars_eNB->common_vars.txdataF[0][0][subframe*nsymb*phy_vars_eNB->frame_parms.ofdm_symbol_size],nsymb*phy_vars_eNB->frame_parms.ofdm_symbol_size,1,1);
+
 
     do_OFDM_mod_symbol(&phy_vars_eNB->common_vars,
 		       0,
@@ -459,7 +489,7 @@ void proc_tx_high0(PHY_VARS_eNB *eNB,
   VCD_SIGNAL_DUMPER_DUMP_VARIABLE_BY_NAME( VCD_SIGNAL_DUMPER_VARIABLES_SUBFRAME_NUMBER_TX0_ENB+offset, proc->subframe_tx );
 
   phy_procedures_eNB_TX(eNB,proc,r_type,rn,1,1);
-
+  //锁住，在sync_phy_proc说明准备完了这个小区的数据，然后发送条件广播，然后解锁//
   /* we're done, let the next one proceed */
   if (pthread_mutex_lock(&sync_phy_proc.mutex_phy_proc_tx) != 0) {
     LOG_E(PHY, "[SCHED][eNB] error locking PHY proc mutex for eNB TX proc\n");
@@ -496,6 +526,7 @@ void proc_tx_full(PHY_VARS_eNB *eNB,
 
 
   // do PHY high
+//printf("lte-enb.c:529 proc_tx_high0\n");
   proc_tx_high0(eNB,proc,r_type,rn);
   // do OFDM modulation
   do_OFDM_mod_rt(proc->subframe_tx,eNB);
@@ -589,11 +620,14 @@ static inline int rxtx(PHY_VARS_eNB *eNB,eNB_rxtx_proc_t *proc, char *thread_nam
 
   // ****************************************
   // Common RX procedures subframe n
-
+  // do_prach wake up the eNB_thread_prach thread
+  //printf("lte-enb 618 start prach");
   if ((eNB->do_prach)&&((eNB->node_function != NGFI_RCC_IF4p5)))
     eNB->do_prach(eNB,proc->frame_rx,proc->subframe_rx);
+  //
+  //printf("lte-enb 622 start RX");
   phy_procedures_eNB_common_RX(eNB,proc);
-  
+  //printf("lte-enb 624 start RX");
   // UE-specific RX processing for subframe n
   if (eNB->proc_uespec_rx) eNB->proc_uespec_rx(eNB, proc, no_relay );
   
@@ -605,9 +639,9 @@ static inline int rxtx(PHY_VARS_eNB *eNB,eNB_rxtx_proc_t *proc, char *thread_nam
   //if (wait_CCs(proc)<0) return(-1);
   
   if (oai_exit) return(-1);
-  
+  //printf("lte-enb 642 start eNB->proc_TX\n");
   if (eNB->proc_tx)	eNB->proc_tx(eNB, proc, no_relay, NULL );
-  
+  //printf("lte-enb 638 start TX");
   if (release_thread(&proc->mutex_rxtx,&proc->instance_cnt_rxtx,thread_name)<0) return(-1);
 
   stop_meas( &softmodem_stats_rxtx_sf );
@@ -1013,7 +1047,7 @@ void rx_rf(PHY_VARS_eNB *eNB,int *frame,int *subframe) {
 
   rxs = eNB->rfdevice.trx_read_func(&eNB->rfdevice,
 				    &ts,
-				    rxp,
+				    rxp, //buff
 				    fp->samples_per_tti,
 				    fp->nb_antennas_rx);
   start_rf_prev2= start_rf_prev;
@@ -1367,13 +1401,13 @@ void *eNB_thread_synch(void *arg) {
     while (eNB->proc.instance_cnt_synch < 0)
       pthread_cond_wait(&eNB->proc.cond_synch,&eNB->proc.mutex_synch);
     pthread_mutex_unlock(&eNB->proc.mutex_synch);
-
+    printf("this is slave eNB and it runs eNB_thread_synch");
     // if we're not in synch, then run initial synch
     if (eNB->in_synch == 0) { 
       // run intial synch like UE
       LOG_I(PHY,"Running initial synchronization\n");
       
-      sync_pos = lte_sync_time_eNB(eNB->common_vars.rxdata[0],
+      sync_pos = lte_sync_time_eNB(eNB->common_vars.rxdata[0],//time_sync where
 				   fp,
 				   fp->samples_per_tti*5,
 				   &peak_val,
@@ -1558,13 +1592,15 @@ static void* eNB_thread_prach( void* param ) {
   thread_top_init("eNB_thread_prach",1,500000L,1000000L,20000000L);
 
   while (!oai_exit) {
-    
+    //相当于这里会等待eNB_thread_single发送过来激活信号，在收到激活信号后进行处理
     if (oai_exit) break;
-
+    //wait_on_condition
+    //此时eNB_thread_single会给发送过来一个信号，激活这里的wait_on_condition
     if (wait_on_condition(&proc->mutex_prach,&proc->cond_prach,&proc->instance_cnt_prach,"eNB_prach_thread") < 0) break;
-    
-    prach_procedures(eNB);
-    
+    //运行prach程序
+    //这个程序里是没有互斥锁的
+    prach_procedures(eNB);//prach_thread
+    //release_thread
     if (release_thread(&proc->mutex_prach,&proc->instance_cnt_prach,"eNB_prach_thread") < 0) break;
   }
 
@@ -1575,7 +1611,7 @@ static void* eNB_thread_prach( void* param ) {
 }
 
 
-
+//eNB创建的第1个线程,输入参数为&eNB->proc
 static void* eNB_thread_single( void* param ) {
 
   static int eNB_thread_single_status;
@@ -1619,15 +1655,20 @@ static void* eNB_thread_single( void* param ) {
     if (eNB->start_if(eNB) != 0)
       LOG_E(HW,"Could not start the IF device\n");
 
-  // Start RF device if any
+  // Start RF device if any  启动射频设备
   if (eNB->start_rf)
     if (eNB->start_rf(eNB) != 0)
       LOG_E(HW,"Could not start the RF device\n");
 
   // wakeup asnych_rxtx thread because the devices are ready at this point
+  //上锁
   pthread_mutex_lock(&proc->mutex_asynch_rxtx);
+  //将变量置为0
   proc->instance_cnt_asynch_rxtx=0;
+  //解锁
   pthread_mutex_unlock(&proc->mutex_asynch_rxtx);
+  //发送激活信号，控制cond_asynch_rxtx
+  //告诉其他因为while(proc->instance_cnt_asynch_rxtx<0)一直在condition_wait的线程，此时这个可以被激活
   pthread_cond_signal(&proc->cond_asynch_rxtx);
 
 
@@ -1674,7 +1715,7 @@ static void* eNB_thread_single( void* param ) {
 					    fp->nb_antennas_rx);
 	if (rxs != fp->samples_per_tti)
 	  exit_fun( "problem receiving samples" );
-
+        //如果这个eNB是slave eNB，那么唤醒eNB_thread_synch线程，如果eNB不是slave eNB不会进入到这里
 	pthread_mutex_lock(&eNB->proc.mutex_synch);
 	ic = eNB->proc.instance_cnt_synch;
 	pthread_mutex_unlock(&eNB->proc.mutex_synch);
@@ -1699,6 +1740,7 @@ static void* eNB_thread_single( void* param ) {
 
 
   // This is a forever while loop, it loops over subframes which are scheduled by incoming samples from HW devices
+  // 接下来一直进入这个循环	
   while (!oai_exit) {
 
     // these are local subframe/frame counters to check that we are in synch with the fronthaul timing.
@@ -1715,7 +1757,8 @@ static void* eNB_thread_single( void* param ) {
 	LOG_D(PHY,"eNB thread single (proc %p, CC_id %d), frame %d (%p), subframe %d (%p)\n",
 	  proc, eNB->CC_id, frame,&frame,subframe,&subframe);
  
-    // synchronization on FH interface, acquire signals/data and block
+    // synchronization on FH interface, acquire signals/data and block 
+    // 这一句完成收发数据
     if (eNB->rx_fh) eNB->rx_fh(eNB,&frame,&subframe);
     else AssertFatal(1==0, "No fronthaul interface : eNB->node_function %d",eNB->node_function);
 
@@ -1732,8 +1775,9 @@ static void* eNB_thread_single( void* param ) {
 
     // At this point, all information for subframe has been received on FH interface
     // If this proc is to provide synchronization, do so
+    // 唤醒eNB的slave eNB，感觉类似于唤醒远程无线射频拉远RRH，并完成与远程RRH的同步
     wakeup_slaves(proc);
-
+    //这一句完成处理流程
     if (rxtx(eNB,proc_rxtx,"eNB_thread_single") < 0) break;
   }
   
@@ -1759,12 +1803,12 @@ void init_eNB_proc(int inst) {
   pthread_attr_t *attr0=NULL,*attr1=NULL,*attr_FH=NULL,*attr_prach=NULL,*attr_asynch=NULL,*attr_single=NULL,*attr_fep=NULL,*attr_td=NULL,*attr_te=NULL,*attr_synch=NULL;
 
   for (CC_id=0; CC_id<MAX_NUM_CCs; CC_id++) {
-    eNB = PHY_vars_eNB_g[inst][CC_id];
+    eNB = PHY_vars_eNB_g[inst][CC_id];//PHY_vars_eNB_g该参数为一全局结构体指针，其定义在vars.h(openair1\PHY)中，有两个维度，第一个维度是最大的eNB数量，第二个维度是每个eNB的最大小区个数，所以在此处相当于指向了这个全局eNB结构体，以下所有操作对全局都是生效的，可以被其他函数读取这个结构体里面的值
 #ifndef OCP_FRAMEWORK
     LOG_I(PHY,"Initializing eNB %d CC_id %d (%s,%s),\n",inst,CC_id,eNB_functions[eNB->node_function],eNB_timing[eNB->node_timing]);
 #endif
     proc = &eNB->proc;
-
+    //线程有3个关键的东西，互斥锁，条件变量，资源可用还是不可用的一个指示
     proc_rxtx = proc->proc_rxtx;
     proc_rxtx[0].instance_cnt_rxtx = -1;
     proc_rxtx[1].instance_cnt_rxtx = -1;
@@ -1779,21 +1823,25 @@ void init_eNB_proc(int inst) {
     proc->frame_offset = 0;
 
     for (i=0;i<10;i++) proc->symbol_mask[i]=0;
-
+    //互斥锁和条件变量的概念：
+    //当多个线程共享一个变量时，一个线程读取这个变量的值，而有另外一个线程会修改这个变量的值，如果不加限制，就难以保证读取的变量值是修改之后还是修改之前的。为了保证变量不会被多个线程同时访问，引入互斥锁（量），互斥锁（量）对共享数据的保护就像一把锁。在Pthreads中，任何时候仅有一个线程可以锁定互斥锁（量），因此，当多个线程尝试去锁定互斥锁（量）时仅有一个会成功，直到锁定互斥锁（量）的线程解锁互斥锁（量）后，其他线程才可以去锁定。如此，线程就会轮流访问受保护数据。这就是互斥锁（量）的概念，在Pthread中定义了一套用于线程同步的mutex函数
+    //条件变量是利用线程间共享的全局变量进行同步的一种机制，主要包括两个动作：一个线程等待”条件变量的条件成立”而挂起；另一个线程使”条件成立”（给出条件成立信号）。为了防止竞争，条件变量的使用总是和一个互斥锁结合在一起
+    //也就是说，实际上互斥锁保护的是全局变量里面的数据
+    //实际上这里面初始化的是defs.h(openair1\PHY)里面eNB_proc_t_s的参数
     pthread_mutex_init( &proc_rxtx[0].mutex_rxtx, NULL);
     pthread_mutex_init( &proc_rxtx[1].mutex_rxtx, NULL);
     pthread_cond_init( &proc_rxtx[0].cond_rxtx, NULL);
     pthread_cond_init( &proc_rxtx[1].cond_rxtx, NULL);
 
-    pthread_mutex_init( &proc->mutex_prach, NULL);
-    pthread_mutex_init( &proc->mutex_asynch_rxtx, NULL);
-    pthread_mutex_init( &proc->mutex_synch,NULL);
+    pthread_mutex_init( &proc->mutex_prach, NULL);//对prach线程的互斥锁
+    pthread_mutex_init( &proc->mutex_asynch_rxtx, NULL);//异步接收发送的互斥锁
+    pthread_mutex_init( &proc->mutex_synch,NULL);//mutex for over-the-air eNB synchronization
 
-    pthread_cond_init( &proc->cond_prach, NULL);
-    pthread_cond_init( &proc->cond_FH, NULL);
+    pthread_cond_init( &proc->cond_prach, NULL);// condition variable for PRACH processing thread;
+    pthread_cond_init( &proc->cond_FH, NULL);// condition variable for FH thread
     pthread_cond_init( &proc->cond_asynch_rxtx, NULL);
-    pthread_cond_init( &proc->cond_synch,NULL);
-
+    pthread_cond_init( &proc->cond_synch,NULL);// condition variable for asynch RX/TX thread
+    // 线程具有属性，用pthread_attr_t表示，在对该结构进行处理之前必须进行初始化，在使用后需要对其去除初始化。我们用pthread_attr_init函数对其初始化，用pthread_attr_destroy对其去除初始化
     pthread_attr_init( &proc->attr_FH);
     pthread_attr_init( &proc->attr_prach);
     pthread_attr_init( &proc->attr_synch);
@@ -1823,13 +1871,13 @@ void init_eNB_proc(int inst) {
       pthread_create( &proc->pthread_FH, attr_FH, eNB_thread_FH, &eNB->proc );
     }
     else {
-      pthread_create(&proc->pthread_single, attr_single, eNB_thread_single, &eNB->proc);
-      init_fep_thread(eNB,attr_fep);
-      init_td_thread(eNB,attr_td);
-      init_te_thread(eNB,attr_te);
+      pthread_create(&proc->pthread_single, attr_single, eNB_thread_single, &eNB->proc);//线程1，其输入参数为&eNB->proc
+      init_fep_thread(eNB,attr_fep);//线程2，其输入参数为eNB,attr_fep
+      init_td_thread(eNB,attr_td);//线程3，其输入参数为eNB,attr_td
+      init_te_thread(eNB,attr_te);//线程4，其输入参数为eNB,attr_te
     }
-    pthread_create( &proc->pthread_prach, attr_prach, eNB_thread_prach, &eNB->proc );
-    pthread_create( &proc->pthread_synch, attr_synch, eNB_thread_synch, eNB);
+    pthread_create( &proc->pthread_prach, attr_prach, eNB_thread_prach, &eNB->proc );//线程5，其输入参数为&eNB->proc
+    pthread_create( &proc->pthread_synch, attr_synch, eNB_thread_synch, eNB);//线程6，其输入参数为eNB
     if ((eNB->node_timing == synch_to_other) ||
 	(eNB->node_function == NGFI_RRU_IF5) ||
 	(eNB->node_function == NGFI_RRU_IF4p5))
@@ -1847,6 +1895,7 @@ void init_eNB_proc(int inst) {
       pthread_setname_np( proc->pthread_FH, name );
     }
     else {
+      //为线程设置名称，没有什么实际意义
       snprintf( name, sizeof(name), " %d", i );
       pthread_setname_np( proc->pthread_single, name );
     }
@@ -1870,9 +1919,18 @@ void init_eNB_proc(int inst) {
 */
 
   /* setup PHY proc TX sync mechanism */
+  //初始化发送同步机制，下面这段代码就在lte-enb.c的开头部分，可以看出这部分是单独为phy_proc_tx创建的
+/* 
+static struct {
+  pthread_mutex_t  mutex_phy_proc_tx;
+  pthread_cond_t   cond_phy_proc_tx;
+  volatile uint8_t phy_proc_CC_id;
+} sync_phy_proc;
+*/
   pthread_mutex_init(&sync_phy_proc.mutex_phy_proc_tx, NULL);
   pthread_cond_init(&sync_phy_proc.cond_phy_proc_tx, NULL);
   sync_phy_proc.phy_proc_CC_id = 0;
+  //结合以上代码来看创建了6个线程，然后初始化了互斥锁和条件变量
 }
 
 
@@ -2057,7 +2115,12 @@ extern void eNB_fep_full(PHY_VARS_eNB *eNB,eNB_rxtx_proc_t *proc);
 extern void eNB_fep_full_2thread(PHY_VARS_eNB *eNB,eNB_rxtx_proc_t *proc);
 extern void do_prach(PHY_VARS_eNB *eNB,int frame,int subframe);
 
-void init_eNB(eNB_func_t node_function[], eNB_timing_t node_timing[],int nb_inst,eth_params_t *eth_params,int single_thread_flag,int wait_for_sync) {
+void init_eNB(eNB_func_t node_function[], eNB_timing_t node_timing[],int nb_inst,eth_params_t *eth_params,int single_thread_flag,int wait_for_sync) {//初始化eNB
+  //eNB_func_t node_function[i]代表eNB类型，i为eNB的CC_id，其值如NGFI_RRU_IF5、eNodeB_3GPP等；
+  //eNB_timing_t node_timing[]表示eNB的时间同步选择，例如synch_to_other等；
+  //nb_inst在外部设置为1；
+  //eth_params代表eNB的网卡设置
+  //single_thread_flag代表是选择单线程还是双线程，其区别在于发送和接收处理是两个线程还是一个线程
   
   int CC_id;
   int inst;
@@ -2145,17 +2208,27 @@ void init_eNB(eNB_func_t node_function[], eNB_timing_t node_timing[],int nb_inst
 	malloc_IF4p5_buffer(eNB);
 
 	break;
-      case eNodeB_3GPP:
+      case eNodeB_3GPP://一般会选择这个类型
 	eNB->do_precoding         = eNB->frame_parms.nb_antennas_tx!=eNB->frame_parms.nb_antenna_ports_eNB;
+	//上行prach信号处理，function in phy_procedures_lte_eNb.c(openair1\SCHED) do prach
 	eNB->do_prach             = do_prach;
+	//function in phy_procedures_lte_eNb.c (openair1\SCHED) eNB_fep_full
 	eNB->fep                  = eNB_fep_full;//(single_thread_flag==1) ? eNB_fep_full_2thread : eNB_fep_full;
+	//function in ulsch_decoding.c (openair1\PHY\LTE_TRANSPORT) ulsch_decoding_data
 	eNB->td                   = ulsch_decoding_data;//(single_thread_flag==1) ? ulsch_decoding_data_2thread : ulsch_decoding_data;
+	//function in dlsch_coding.c (openair1\PHY\LTE_TRANSPORT) dlsch_encoding
 	eNB->te                   = dlsch_encoding;//(single_thread_flag==1) ? dlsch_encoding_2threads : dlsch_encoding;
+	//function in phy_procedures_lte_eNb.c (openair1\SCHED) phy_procedures_eNB_uespec_RX
 	eNB->proc_uespec_rx       = phy_procedures_eNB_uespec_RX;
+	//function in lte-enb.c (targets\RT\USER),include proc_tx_high0 and do_OFDM_mod_rt
 	eNB->proc_tx              = proc_tx_full;
+	//
 	eNB->tx_fh                = NULL;
+	//function in lte-enb.c (targets\RT\USER)
 	eNB->rx_fh                = rx_rf;
+	//
 	eNB->start_rf             = start_rf;
+	//
 	eNB->start_if             = NULL;
         eNB->fh_asynch            = NULL;
         if (oaisim_flag == 0) {

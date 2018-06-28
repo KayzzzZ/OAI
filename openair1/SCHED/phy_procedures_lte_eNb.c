@@ -1232,6 +1232,7 @@ void phy_procedures_eNB_TX(PHY_VARS_eNB *eNB,
   // This is called only for the CC_id = 0 and triggers scheduling for all CC_id's
   if (eNB->mac_enabled==1) {
     if (eNB->CC_id == 0) {
+      //应该是在这里做完的大部分上行和下行调度流程
       mac_xface->eNB_dlsch_ulsch_scheduler(eNB->Mod_id,0,frame,subframe);//,1);
     }
   }
@@ -2092,7 +2093,7 @@ void prach_procedures(PHY_VARS_eNB *eNB) {
           update_TA  = 1;
           break;
         }
-
+	//这里是和mac层的接口
 	mac_xface->initiate_ra_proc(eNB->Mod_id,
 				    eNB->CC_id,
 				    frame,
@@ -2767,6 +2768,7 @@ void eNB_fep_full(PHY_VARS_eNB *eNB,eNB_rxtx_proc_t *proc_rxtx) {
   start_meas(&eNB->ofdm_demod_stats);
   remove_7_5_kHz(eNB,proc_rxtx->subframe_rx<<1);
   remove_7_5_kHz(eNB,1+(proc_rxtx->subframe_rx<<1));
+  //做dft
   for (l=0; l<fp->symbols_per_tti/2; l++) {
     slot_fep_ul(fp,
 		&eNB->common_vars,
@@ -2833,24 +2835,26 @@ void do_prach(PHY_VARS_eNB *eNB,int frame,int subframe) {
     }
     
     // wake up thread for PRACH RX
+    // 先锁住mutex_prach，注意这里pthread_mutex_lock的正确返回值是0,其他返回值都是错误的
     if (pthread_mutex_lock(&proc->mutex_prach) != 0) {
       LOG_E( PHY, "[eNB] ERROR pthread_mutex_lock for eNB PRACH thread %d (IC %d)\n", proc->thread_index, proc->instance_cnt_prach);
       exit_fun( "error locking mutex_prach" );
       return;
     }
-    
+    //增加这个值
     ++proc->instance_cnt_prach;
     // set timing for prach thread
     proc->frame_prach = frame;
     proc->subframe_prach = subframe;
     
     // the thread can now be woken up
+    // 发送唤醒信号，唤醒prach线程
     if (pthread_cond_signal(&proc->cond_prach) != 0) {
       LOG_E( PHY, "[eNB] ERROR pthread_cond_signal for eNB PRACH thread %d\n", proc->thread_index);
       exit_fun( "ERROR pthread_cond_signal" );
       return;
     }
-    
+    //解锁互斥锁
     pthread_mutex_unlock( &proc->mutex_prach );
   }
 
@@ -2882,7 +2886,7 @@ void phy_procedures_eNB_common_RX(PHY_VARS_eNB *eNB,eNB_rxtx_proc_t *proc){
   start_meas(&eNB->phy_proc_rx);
   LOG_D(PHY,"[eNB %d] Frame %d: Doing phy_procedures_eNB_common_RX(%d)\n",eNB->Mod_id,frame,subframe);
 
-
+  //在这里调用fep_thread,指向函数eNB_fep_full
   if (eNB->fep) eNB->fep(eNB,proc);
 
   VCD_SIGNAL_DUMPER_DUMP_FUNCTION_BY_NAME( VCD_SIGNAL_DUMPER_FUNCTIONS_PHY_PROCEDURES_ENB_RX_COMMON+offset, 0 );
